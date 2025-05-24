@@ -18,20 +18,19 @@ if __name__ == "__main__":
         seeds and the number of episodes per seed.
     """
 
-    # model_path = "./ckpt/ckpt_best.pth.tar"
-    model_path = None
+    model_path = "/scratch/pawsey1151/alexchen5/LightZero/data_muzero/tictactoe_muzero_bot-mode_ns25_upc50_rer0.0_seed0_250521_164203/ckpt/ckpt_best.pth.tar"
 
     seeds = [0]
     num_episodes_each_seed = 1
     # If True, you can play with the agent.
-    main_config.env.agent_vs_human = False
+    main_config.env.agent_vs_human = True
     create_config.env_manager.type = 'base'
     main_config.env.evaluator_env_num = 1
     main_config.env.n_evaluator_episode = 1
     total_test_episodes = num_episodes_each_seed * len(seeds)
 
     # Enable saving of replay as a gif, specify the path to save the replay gif
-    main_config.env.replay_path = './video'
+    main_config.env.replay_path = '/scratch/pawsey1151/alexchen5/LightZero/data_muzero/tictactoe_muzero_bot-mode_ns25_upc50_rer0.0_seed0_250521_164203/video'
 
     returns_mean_seeds = []
     returns_seeds = []
