@@ -72,6 +72,10 @@ class ScratchpadEnv(BaseEnv):
         return self._action_space
         
     @property
+    def reward_space(self) -> spaces.Space:
+        return self._reward_space
+        
+    @property
     def legal_actions(self):
         legal_actions: list[int] = []
         
@@ -122,16 +126,9 @@ class ScratchpadEnv(BaseEnv):
         self.evaluate_model=cfg.evaluate_model # "test_01"
         
         self._action_space = spaces.Discrete(len(Action))
+        self._reward_space = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
         
-        self._observation_space = spaces.Dict({
-            "input": spaces.Box(0, END_OF_TEXT, (self.input_token_len, ), dtype=np.int32),
-            "output": spaces.Box(0, END_OF_TEXT, (self.output_token_len, ), dtype=np.int32),
-            "scratchpad": spaces.Box(0, END_OF_TEXT, (self.scratchpad_token_len, ), dtype=np.int32),
-            "cursor_pos": spaces.Tuple([spaces.Discrete(2), spaces.Discrete(max(self.input_token_len, self.scratchpad_token_len))]),
-            "cursor_highlight": spaces.Tuple([spaces.Discrete(2), spaces.Discrete(max(self.input_token_len, self.scratchpad_token_len)), spaces.Discrete(max(self.input_token_len, self.scratchpad_token_len))]),
-            "llm_input": spaces.Box(0, END_OF_TEXT, (self.llm_input_token_len, ), dtype=np.int32),
-            "llm_output": spaces.Box(0, END_OF_TEXT, (self.llm_output_token_len, ), dtype=np.int32),
-        })
+        self._observation_space = spaces.Box(0, END_OF_TEXT, (self.input_token_len + self.output_token_len + self.scratchpad_token_len + 2 + 3 + self.llm_input_token_len + self.llm_output_token_len, ), dtype=np.int32)
         
     def reset(self) -> Observation:
         

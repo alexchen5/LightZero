@@ -88,4 +88,4 @@ scratchpad_muzero_create_config = EasyDict(scratchpad_muzero_create_config)
 
 if __name__ == "__main__":
     from lzero.entry import train_muzero
-    train_muzero([scratchpad_muzero_config, scratchpad_muzero_create_config], seed=0, model_path=main_config.policy.model_path, max_env_step=max_env_step)
+    train_muzero([scratchpad_muzero_config, scratchpad_muzero_create_config], seed=0, model_path=scratchpad_muzero_config.policy.model_path, max_env_step=max_env_step)
