@@ -26,18 +26,111 @@ class Action(Enum):
     OUTPUT = 12         # output the (single) token at cursor index 
     
 class State(TypedDict):
+    # observation = [
+    # 0  [ ...input, ...scratchpad, ...llm_input, ...llm_output, ...output ]
+    # 1  [ ...1, ...0 ] (input attention mask)
+    # 2  [ ...0, ...1, ...0 ] (scratchpad attention mask)
+    # 3     (llm_input attention mask)
+    # 4     (llm_output attention mask)
+    # 5     (output attention mask)
+    # 6  [ ...0, 1, ...0 ] (cursor position)
+    # 7  [ ...0, 1, ...0 ] (start highlight position)
+    # 8  [ ...0, ...1, ...0 ] (highlighted)
+    # ]
     input: np.ndarray
-    output: np.ndarray
     scratchpad: np.ndarray
-    cursor_pos: np.ndarray
-    cursor_highlight: np.ndarray
     llm_input: np.ndarray
     llm_output: np.ndarray
+    output: np.ndarray
+    cursor_pos: np.ndarray
+    cursor_highlight: np.ndarray
     
 class Observation(TypedDict):
     observation: np.ndarray
     action_mask: np.ndarray
     to_play: Literal[-1]
+
+def state_to_observation(state: State) -> np.ndarray:
+    raw_segments = [state['input'], state['scratchpad'], state['llm_input'], state['llm_output'], state['output']]
+    segments = [np.concatenate([raw_segment, [END_OF_TEXT]]) for raw_segment in raw_segments]
+    tokens = np.concatenate(segments)
+    total_text_dim = len(tokens)
+
+    # Row 0: Tokens
+    row_0 = tokens
+    
+    # Compute start and end indices for each original (non-<eot>) segment
+    masks_i = np.cumsum([0] + [len(segment) for segment in segments[:-1]])
+    masks_s = [masks_i[i] + len(raw_segment) for i, raw_segment in enumerate(raw_segments)]
+    
+    # Rows 1–5: Attention masks
+    masks = [np.zeros(total_text_dim, dtype=np.float32) for _ in range(5)]
+    for i in range(5):
+        masks[i][masks_i[i]:masks_s[i]] = 1
+    row_1, row_2, row_3, row_4, row_5 = masks 
+    
+    # Row 6: Cursor position (one-hot)
+    row_6 = np.zeros(total_text_dim, dtype=np.float32)
+    cursor_seg, cursor_i = state['cursor_pos']
+    cursor_i = masks_i[cursor_seg] + cursor_i
+    row_6[cursor_i] = 1
+    
+    # Row 7: Cursor highlight start (one-hot)
+    # Row 8: Highlighted span
+    row_7 = np.zeros(total_text_dim, dtype=np.float32)
+    row_8 = np.zeros(total_text_dim, dtype=np.float32)
+    
+    highlight_seg, highlight_i, highlight_s = state['cursor_highlight']
+    highlight_i = masks_i[highlight_seg] + highlight_i
+    highlight_s = masks_i[highlight_seg] + highlight_s
+    row_7[highlight_i] = 1
+    row_8[highlight_i:highlight_s] = 1
+    
+    return np.stack([row_0, row_1, row_2, row_3, row_4, row_5, row_6, row_7, row_8])
+    
+def observation_to_state(obs: np.ndarray) -> State:
+    # Extract token row and attention masks
+    row_0 = obs[0]
+    masks = obs[1:6]  # rows 1–5
+    row_6, row_7, row_8 = obs[6], obs[7], obs[8]
+    
+    raw_segments = []
+    masks_i = []
+
+    # Extract each segment using its attention mask
+    for mask in masks:
+        indices = np.where(mask == 1)[0]
+        masks_i.append(indices[0])
+        raw_segments.append(row_0[indices])
+    input_, scratchpad, llm_input, llm_output, output = raw_segments
+    
+    cursor_i = np.where(row_6 == 1)[0][0]
+    cursor_seg = np.searchsorted(masks_i, cursor_i, side="right") - 1
+    cursor_i = cursor_i - masks_i[cursor_seg]
+    
+    cursor = (cursor_seg, cursor_i)
+    
+    highlight_i = np.where(row_7 == 1)[0][0]
+    highlight_seg = np.searchsorted(masks_i, highlight_i, side="right") - 1
+    highlight_i = highlight_i - masks_i[highlight_seg]
+    
+    if np.where(row_8 == 1)[0].size > 0:
+        highlight_s = np.where(row_8 == 1)[0].max() + 1 # exclusive 
+        highlight_s = highlight_s - masks_i[highlight_seg]
+    else:
+        highlight_s = highlight_i
+    
+    highlight = (highlight_seg, highlight_i, highlight_s)
+    
+    return {
+        "input": input_,
+        "scratchpad": scratchpad,
+        "llm_input": llm_input,
+        "llm_output": llm_output,
+        "output": output,
+        "cursor_pos": np.array(cursor, dtype=np.int32),
+        "cursor_highlight": np.array(highlight, dtype=np.int32)
+    }
 
 @ENV_REGISTRY.register('scratchpad')
 class ScratchpadEnv(BaseEnv):
@@ -118,12 +211,14 @@ class ScratchpadEnv(BaseEnv):
         self._cfg = cfg
         
         self.input_token_len = cfg.input_token_len
-        self.output_token_len = cfg.output_token_len
         self.scratchpad_token_len = cfg.scratchpad_token_len
         self.llm_input_token_len = cfg.llm_input_token_len
         self.llm_output_token_len = cfg.llm_output_token_len
+        self.output_token_len = cfg.output_token_len
         self.llm_model=cfg.llm_model # "test_01"
         self.evaluate_model=cfg.evaluate_model # "test_01"
+        
+        self._total_text_dim = self.input_token_len+1 + self.scratchpad_token_len+1 + self.llm_input_token_len+1 + self.llm_output_token_len+1 + self.output_token_len+1
         
         self._action_space = spaces.Discrete(len(Action))
         self._reward_space = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
@@ -137,12 +232,12 @@ class ScratchpadEnv(BaseEnv):
         
         self._s: State = {
             'input': np.full(shape=(self.input_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
-            'output': np.full(shape=(self.output_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
             'scratchpad': np.full(shape=(self.scratchpad_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
+            'llm_input': np.full(shape=(self.llm_input_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
+            'llm_output': np.full(shape=(self.llm_output_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
+            'output': np.full(shape=(self.output_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
             'cursor_pos': np.zeros((2), np.int32),
             'cursor_highlight': np.zeros((3), np.int32),
-            'llm_input': np.full(shape=(self.llm_input_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
-            'llm_output': np.full(shape=(self.llm_output_token_len), fill_value=END_OF_TEXT, dtype=np.int32)
         }
         
         if self.llm_model == "test_01":
@@ -150,24 +245,7 @@ class ScratchpadEnv(BaseEnv):
         
         action_mask = np.zeros(len(Action), 'int8')
         action_mask[self.legal_actions] = 1
-        return { 'observation': self.state_to_flat(self._s), 'action_mask': action_mask, 'to_play': -1 }
-    
-    def state_to_flat(self, state: State):
-        return np.concatenate([v.flatten() for v in state.values()])
-        
-    def flat_to_state(self, flat: np.ndarray) -> State:
-        """
-        Reconstructs the original structured state dictionary from the flat array,
-        using the `template` dictionary to infer shapes and keys.
-        """
-        new_state: State = {}
-        offset = 0
-        for key, value in self._s.items():
-            size = np.prod(value.shape)
-            reshaped = flat[offset:offset + size].reshape(value.shape)
-            new_state[key] = reshaped.astype(value.dtype)
-            offset += size
-        return new_state
+        return { 'observation': state_to_observation(self._s), 'action_mask': action_mask, 'to_play': -1 }
     
     def set_input(self, tokens: Iterable[np.int32]):
         self._s['input'] = np.full(shape=(self.input_token_len), fill_value=END_OF_TEXT, dtype=np.int32)
@@ -256,7 +334,7 @@ class ScratchpadEnv(BaseEnv):
         action_mask = np.zeros(len(Action), 'int8')
         action_mask[self.legal_actions] = 1
         
-        obs = { 'observation': self.state_to_flat(self._s), 'action_mask': action_mask, 'to_play': -1 }
+        obs = { 'observation': state_to_observation(self._s), 'action_mask': action_mask, 'to_play': -1 }
         
         info = {}
         if done:

@@ -3,6 +3,12 @@ from easydict import EasyDict
 # ==============================================================
 # begin of the most frequently changed config specified by the user
 # ==============================================================
+input_token_len=10
+scratchpad_token_len=10
+llm_input_token_len=4
+llm_output_token_len=24
+output_token_len=20
+
 collector_env_num = 8
 n_episode = 8
 evaluator_env_num = 5
@@ -14,15 +20,16 @@ reanalyze_ratio = 0.
 # ==============================================================
 # end of the most frequently changed config specified by the user
 # ==============================================================
+total_text_dim = input_token_len+1+scratchpad_token_len+1+llm_input_token_len+1+llm_output_token_len+1+output_token_len+1
 
 scratchpad_muzero_config = dict(
     exp_name=f'data_muzero/scratchpad_muzero',
     env=dict(
-        input_token_len=10,
-        output_token_len=20,
-        scratchpad_token_len=10,
-        llm_input_token_len=4,
-        llm_output_token_len=24,
+        input_token_len=input_token_len,
+        scratchpad_token_len=scratchpad_token_len,
+        llm_input_token_len=llm_input_token_len,
+        llm_output_token_len=llm_output_token_len,
+        output_token_len=output_token_len,
         llm_model="test_01",
         evaluate_model="test_01",
         
@@ -33,7 +40,7 @@ scratchpad_muzero_config = dict(
     ),
     policy=dict(
         model=dict(
-            observation_shape=(10+20+10+4+24,),
+            observation_shape=(9, total_text_dim),
             action_space_size=13,
             image_channel=1,
             # We use the small size model for tictactoe.
