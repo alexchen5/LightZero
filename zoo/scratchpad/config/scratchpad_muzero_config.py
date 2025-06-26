@@ -11,12 +11,21 @@ output_token_len=20
 
 collector_env_num = 8
 n_episode = 8
-evaluator_env_num = 5
-num_simulations = 25
-update_per_collect = 50
+evaluator_env_num = 3
+num_simulations = 50
+update_per_collect = 200
 batch_size = 256
-max_env_step = int(2e5)
+max_env_step = int(5e5)
 reanalyze_ratio = 0.
+
+# =========== for debug ===========
+# collector_env_num = 2
+# n_episode = 2
+# evaluator_env_num = 2
+# num_simulations = 2
+# update_per_collect = 2
+# batch_size = 2
+
 # ==============================================================
 # end of the most frequently changed config specified by the user
 # ==============================================================
@@ -33,6 +42,12 @@ scratchpad_muzero_config = dict(
         llm_model="test_01",
         evaluate_model="test_01",
         
+        observation_shape=(1, 9, total_text_dim),
+        obs_type='dict_encoded_board',
+        raw_reward_type='raw',  # 'merged_tiles_plus_log_max_tile_num'
+        reward_normalize=False,
+        reward_norm_scale=100,
+        
         collector_env_num=collector_env_num,
         evaluator_env_num=evaluator_env_num,
         n_evaluator_episode=evaluator_env_num,
@@ -40,7 +55,7 @@ scratchpad_muzero_config = dict(
     ),
     policy=dict(
         model=dict(
-            observation_shape=(9, total_text_dim),
+            observation_shape=(1, 9, total_text_dim),
             action_space_size=13,
             image_channel=1,
             # We use the small size model for tictactoe.
@@ -49,31 +64,34 @@ scratchpad_muzero_config = dict(
             reward_head_hidden_channels=[8],
             value_head_hidden_channels=[8],
             policy_head_hidden_channels=[8],
-            support_scale=1,
-            reward_support_size=1,
-            value_support_size=1,
+            support_scale=10,
+            reward_support_size=21,
+            value_support_size=21,
+            self_supervised_learning_loss=True,
         ),
         # (str) The path of the pretrained model. If None, the model will be initialized by the default model.
         model_path=None,
         cuda=True,
-        action_type='varied_action_space',
+        # env_type="not_board_games",
+        # action_type='fixed_action_space',
         game_segment_length=9,
         update_per_collect=update_per_collect,
         batch_size=batch_size,
+        td_steps=10,
+        discount_factor=0.999,
+        manual_temperature_decay=True,
+        threshold_training_steps_for_final_temperature=int(1e5),
         optim_type='Adam',
         piecewise_decay_lr_scheduler=False,
-        learning_rate=0.003,
-        grad_clip_value=0.5,
+        learning_rate=3e-3,
+        # (float) Weight decay for training policy network.
+        weight_decay=1e-4,
         num_simulations=num_simulations,
         reanalyze_ratio=reanalyze_ratio,
-        # NOTE：In board_games, we set large td_steps to make sure the value target is the final outcome.
-        td_steps=9,
-        num_unroll_steps=3,
-        # NOTE：In board_games, we set discount_factor=1.
-        discount_factor=1,
+        ssl_loss_weight=2,  # default is 0
         n_episode=n_episode,
         eval_freq=int(2e3),
-        replay_buffer_size=int(1e4),
+        replay_buffer_size=int(1e6),  # the size/capacity of replay_buffer, in the terms of transitions.
         collector_env_num=collector_env_num,
         evaluator_env_num=evaluator_env_num,
     ),

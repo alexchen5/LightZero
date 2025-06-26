@@ -4,6 +4,15 @@ from typing import Dict, Any
 
 def main(seed: int = 0) -> None:
     env_id='scratchpad'
+    
+    input_token_len=10
+    scratchpad_token_len=10
+    llm_input_token_len=4
+    llm_output_token_len=24
+    output_token_len=20
+
+    total_text_dim = input_token_len+1+scratchpad_token_len+1+llm_input_token_len+1+llm_output_token_len+1+output_token_len+1
+
 
     collector_env_num: int = 4       # Number of collector environments
     n_episode = int(collector_env_num)
@@ -41,28 +50,35 @@ def main(seed: int = 0) -> None:
     # ------------------------------------------------------------------
     # TODO: Debug configuration - override some parameters for debugging purposes
     # ------------------------------------------------------------------
-    # max_env_step = int(2e5) 
-    # batch_size = 10  
-    # num_simulations = 2 
-    # num_unroll_steps = 5
-    # infer_context_length = 2
-    # max_steps = 10
-    # num_layers = 1
-    # replay_ratio = 0.05             
+    max_env_step = int(2e5) 
+    batch_size = 10  
+    num_simulations = 2 
+    num_unroll_steps = 5
+    infer_context_length = 2
+    max_steps = 10
+    num_layers = 1
+    replay_ratio = 0.05             
     # ------------------------------------------------------------------
     # Configuration dictionary for the Jericho Unizero environment and policy
     # ------------------------------------------------------------------
     scratchpad_unizero_config: Dict[str, Any] = dict(
         env=dict(
-            input_token_len=10,
-            output_token_len=20,
-            scratchpad_token_len=10,
-            llm_input_token_len=4,
-            llm_output_token_len=24,
+            stop_value=int(1e6),
+            observation_shape=(1, 9, total_text_dim),
+            max_steps=max_steps,
+            max_action_num=action_space_size,
+            # tokenizer_path=model_name,
+            # max_seq_len=512,
+            # game_path=f"./zoo/jericho/envs/z-machine-games-master/jericho-game-suite/{env_id}",
+            for_unizero=True,
+            
+            input_token_len=input_token_len,
+            scratchpad_token_len=scratchpad_token_len,
+            llm_input_token_len=llm_input_token_len,
+            llm_output_token_len=llm_output_token_len,
+            output_token_len=output_token_len,
             llm_model="test_01",
             evaluate_model="test_01",
-            
-            tokenizer_path=model_name,
             
             collector_env_num=collector_env_num,
             evaluator_env_num=evaluator_env_num,
@@ -81,9 +97,9 @@ def main(seed: int = 0) -> None:
             ),
             accumulation_steps=1,  # TODO: Accumulated gradient steps (currently default)
             model=dict(
-                observation_shape=10+20+10+4+24,
-                action_space_size=13,
-                encoder_url=model_name,
+                observation_shape=(1, 9, total_text_dim),
+                action_space_size=action_space_size,
+                # encoder_url=model_name,
                 model_type="mlp",
                 continuous_action_space=False,
                 world_model_cfg=dict(
@@ -101,14 +117,16 @@ def main(seed: int = 0) -> None:
                     num_layers=num_layers,
                     num_heads=24,
                     embed_dim=embed_dim,
-                    obs_type="text",
+                    obs_type="image_memory",
+                    norm_type='BN',
+                    rotary_emb=True,
                     env_num=max(collector_env_num, evaluator_env_num),
                     decode_loss_mode=None, # Controls where to compute reconstruction loss: after_backbone, before_backbone, or None.
                     latent_recon_loss_weight=0.1
                 ),
             ),
             update_per_collect=int(collector_env_num*max_steps*replay_ratio ),  # Important for DDP
-            action_type="fixed_action_space",
+            action_type="varied_action_space",
             model_path=None,
             num_unroll_steps=num_unroll_steps,
             reanalyze_ratio=0,
