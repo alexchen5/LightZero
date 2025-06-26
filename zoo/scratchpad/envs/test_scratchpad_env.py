@@ -34,10 +34,10 @@ class TestScratchpad:
         
     def test_reset(self):
         obs = self.env.reset()
-        assert obs['observation'].shape == (9, total_text_dim)
-        assert obs['observation'][0][input_token_len] == END_OF_TEXT
-        assert obs['observation'][1][0] == 1
-        assert obs['observation'][1][input_token_len] == 0
+        assert obs['observation'].shape == (1, 9, total_text_dim)
+        assert obs['observation'][0][0][input_token_len] == END_OF_TEXT
+        assert obs['observation'][0][1][0] == 1
+        assert obs['observation'][0][1][input_token_len] == 0
         
     def test_cursor_to_input(self):
         self.env.reset()
@@ -455,6 +455,6 @@ class TestScratchpad:
         
         self.env.step(Action.TO_SCRATCHPAD.value)
         obs1, reward, done, info = self.env.step(Action.OUTPUT.value)
-        assert reward == 2 / 5
+        assert reward == np.float32(2 / 5)
         
         

@@ -86,9 +86,13 @@ def state_to_observation(state: State) -> np.ndarray:
     row_7[highlight_i] = 1
     row_8[highlight_i:highlight_s] = 1
     
-    return np.stack([row_0, row_1, row_2, row_3, row_4, row_5, row_6, row_7, row_8])
+    dim2 = np.stack([row_0, row_1, row_2, row_3, row_4, row_5, row_6, row_7, row_8], dtype=np.float32)
+    dim3 = dim2.reshape(1, 9, -1)
+    return dim3 
     
 def observation_to_state(obs: np.ndarray) -> State:
+    obs = obs.reshape(9, -1)
+
     # Extract token row and attention masks
     row_0 = obs[0]
     masks = obs[1:6]  # rows 1–5
@@ -223,7 +227,7 @@ class ScratchpadEnv(BaseEnv):
         self._action_space = spaces.Discrete(len(Action))
         self._reward_space = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
         
-        self._observation_space = spaces.Box(0, END_OF_TEXT, (self.input_token_len + self.output_token_len + self.scratchpad_token_len + 2 + 3 + self.llm_input_token_len + self.llm_output_token_len, ), dtype=np.int32)
+        self._observation_space = spaces.Box(0, END_OF_TEXT, (self.input_token_len + self.output_token_len + self.scratchpad_token_len + 2 + 3 + self.llm_input_token_len + self.llm_output_token_len, ), dtype=np.float32)
         
     def reset(self) -> Observation:
         
@@ -231,28 +235,28 @@ class ScratchpadEnv(BaseEnv):
         self._final_eval_reward = 0.0
         
         self._s: State = {
-            'input': np.full(shape=(self.input_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
-            'scratchpad': np.full(shape=(self.scratchpad_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
-            'llm_input': np.full(shape=(self.llm_input_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
-            'llm_output': np.full(shape=(self.llm_output_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
-            'output': np.full(shape=(self.output_token_len), fill_value=END_OF_TEXT, dtype=np.int32),
+            'input': np.full(shape=(self.input_token_len), fill_value=END_OF_TEXT, dtype=np.float32),
+            'scratchpad': np.full(shape=(self.scratchpad_token_len), fill_value=END_OF_TEXT, dtype=np.float32),
+            'llm_input': np.full(shape=(self.llm_input_token_len), fill_value=END_OF_TEXT, dtype=np.float32),
+            'llm_output': np.full(shape=(self.llm_output_token_len), fill_value=END_OF_TEXT, dtype=np.float32),
+            'output': np.full(shape=(self.output_token_len), fill_value=END_OF_TEXT, dtype=np.float32),
             'cursor_pos': np.zeros((2), np.int32),
             'cursor_highlight': np.zeros((3), np.int32),
         }
         
         if self.llm_model == "test_01":
-            self.set_input([np.int32(np.random.randint(low=2, high=self.output_token_len))])
+            self.set_input([np.float32(np.random.randint(low=2, high=self.output_token_len))])
         
         action_mask = np.zeros(len(Action), 'int8')
         action_mask[self.legal_actions] = 1
         return { 'observation': state_to_observation(self._s), 'action_mask': action_mask, 'to_play': -1 }
     
-    def set_input(self, tokens: Iterable[np.int32]):
-        self._s['input'] = np.full(shape=(self.input_token_len), fill_value=END_OF_TEXT, dtype=np.int32)
+    def set_input(self, tokens: Iterable[np.float32]):
+        self._s['input'] = np.full(shape=(self.input_token_len), fill_value=END_OF_TEXT, dtype=np.float32)
         for i, t in enumerate(tokens):
             self._s['input'][i] = t
-    def set_output(self, tokens: Iterable[np.int32]):
-        self._s['output'] = np.full(shape=(self.output_token_len), fill_value=END_OF_TEXT, dtype=np.int32)
+    def set_output(self, tokens: Iterable[np.float32]):
+        self._s['output'] = np.full(shape=(self.output_token_len), fill_value=END_OF_TEXT, dtype=np.float32)
         for i, t in enumerate(tokens):
                 self._s['output'][i] = t
         
@@ -307,8 +311,8 @@ class ScratchpadEnv(BaseEnv):
             else:
                 src = self._s['scratchpad']
                 
-            self._s['llm_input'] = np.full(shape=(self.llm_input_token_len), fill_value=END_OF_TEXT, dtype=np.int32)
-            self._s['llm_output'] = np.full(shape=(self.llm_output_token_len), fill_value=END_OF_TEXT, dtype=np.int32)
+            self._s['llm_input'] = np.full(shape=(self.llm_input_token_len), fill_value=END_OF_TEXT, dtype=np.float32)
+            self._s['llm_output'] = np.full(shape=(self.llm_output_token_len), fill_value=END_OF_TEXT, dtype=np.float32)
             for i in range(self._s['cursor_highlight'][2] - self._s['cursor_highlight'][1]):
                 self._s['llm_input'][i] = src[self._s['cursor_highlight'][1] + i]
         if action == Action.LLM_GENERATE.value:
@@ -353,10 +357,10 @@ class ScratchpadEnv(BaseEnv):
     def close(self) -> None:
         pass
         
-    def evaluate_output(self) -> float:
+    def evaluate_output(self) -> np.float32:
         if self.llm_model == "test_01":
             reward = 0
-            n = self._s['input'][0]
+            n = int(self._s['input'][0])
             if not n:
                 return 0
             answer = [i % 2 for i in range(n)]
@@ -367,7 +371,7 @@ class ScratchpadEnv(BaseEnv):
                 else:
                     break
 
-            return reward / n
+            return np.float32(reward / n)
         if self.llm_model == "qwen":
             return 0
         
