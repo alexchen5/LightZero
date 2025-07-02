@@ -219,6 +219,7 @@ class ScratchpadEnv(BaseEnv):
         self.llm_input_token_len = cfg.llm_input_token_len
         self.llm_output_token_len = cfg.llm_output_token_len
         self.output_token_len = cfg.output_token_len
+        self.max_episode_len = cfg.max_episode_len
         self.llm_model=cfg.llm_model # "test_01"
         self.evaluate_model=cfg.evaluate_model # "test_01"
         
@@ -261,6 +262,7 @@ class ScratchpadEnv(BaseEnv):
                 self._s['output'][i] = t
         
     def step(self, action) -> BaseEnvTimestep:
+        self.episode_length += 1
     
         # Check if the action is legal, otherwise choose a random legal action
         if action not in self.legal_actions:
@@ -332,8 +334,9 @@ class ScratchpadEnv(BaseEnv):
             self._s['output'][s] = self._s['scratchpad'][self._s['cursor_pos'][1]]
             done = (self._s['output'][s] == END_OF_TEXT) or (s == self.output_token_len - 1)
             reward = self.evaluate_output()
+            self._final_eval_reward = reward
         
-        self._final_eval_reward = reward
+        done = done or self.episode_length >= self.max_episode_len
         
         action_mask = np.zeros(len(Action), 'int8')
         action_mask[self.legal_actions] = 1

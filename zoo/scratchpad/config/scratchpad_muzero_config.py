@@ -8,14 +8,15 @@ scratchpad_token_len=10
 llm_input_token_len=4
 llm_output_token_len=24
 output_token_len=20
+max_episode_len=40
 
 collector_env_num = 8
-n_episode = 8
+n_episode = 80
 evaluator_env_num = 3
 num_simulations = 50
 update_per_collect = 200
-batch_size = 256
-max_env_step = int(5e5)
+batch_size = 64
+max_env_step = int(1e6)
 reanalyze_ratio = 0.
 
 # =========== for debug ===========
@@ -39,6 +40,7 @@ scratchpad_muzero_config = dict(
         llm_input_token_len=llm_input_token_len,
         llm_output_token_len=llm_output_token_len,
         output_token_len=output_token_len,
+        max_episode_len=max_episode_len,
         llm_model="test_01",
         evaluate_model="test_01",
         
@@ -73,8 +75,8 @@ scratchpad_muzero_config = dict(
         model_path=None,
         cuda=True,
         # env_type="not_board_games",
-        # action_type='fixed_action_space',
-        game_segment_length=9,
+        action_type='varied_action_space',
+        game_segment_length=max_episode_len,
         update_per_collect=update_per_collect,
         batch_size=batch_size,
         td_steps=10,
@@ -91,7 +93,7 @@ scratchpad_muzero_config = dict(
         ssl_loss_weight=2,  # default is 0
         n_episode=n_episode,
         eval_freq=int(2e3),
-        replay_buffer_size=int(1e6),  # the size/capacity of replay_buffer, in the terms of transitions.
+        replay_buffer_size=int(1e4),  # the size/capacity of replay_buffer, in the terms of transitions.
         collector_env_num=collector_env_num,
         evaluator_env_num=evaluator_env_num,
     ),
