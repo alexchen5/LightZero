@@ -232,9 +232,6 @@ class ScratchpadEnv(BaseEnv):
         
     def reset(self) -> Observation:
         
-        self.episode_length = 0
-        self._final_eval_reward = 0.0
-        
         self._s: State = {
             'input': np.full(shape=(self.input_token_len), fill_value=END_OF_TEXT, dtype=np.float32),
             'scratchpad': np.full(shape=(self.scratchpad_token_len), fill_value=END_OF_TEXT, dtype=np.float32),
@@ -244,9 +241,11 @@ class ScratchpadEnv(BaseEnv):
             'cursor_pos': np.zeros((2), np.int32),
             'cursor_highlight': np.zeros((3), np.int32),
         }
+        self.episode_length = 0
+        self._state_value = self.get_state_value()
         
         if self.llm_model == "test_01":
-            self.set_input([np.float32(np.random.randint(low=2, high=self.output_token_len))])
+            self.set_input([np.float32(np.random.randint(low=4, high=8))])
         
         action_mask = np.zeros(len(Action), 'int8')
         action_mask[self.legal_actions] = 1
@@ -274,6 +273,7 @@ class ScratchpadEnv(BaseEnv):
         
         reward = 0 
         done = False
+        
         if action == Action.TO_INPUT.value:
             self._s['cursor_pos'][0] = 0
             self._s['cursor_pos'][1] = 0
@@ -301,7 +301,7 @@ class ScratchpadEnv(BaseEnv):
                 src = self._s['scratchpad']
             src_len = self._s['cursor_highlight'][2] - self._s['cursor_highlight'][1]
             
-            buffer = [src[self._s['cursor_pos'][1] + i] for i in range(src_len)]
+            buffer = [src[self._s['cursor_highlight'][1] + i] for i in range(src_len)]
             for i in range(src_len):
                 self._s['scratchpad'][self._s['cursor_pos'][1] + i] = buffer[i]
         if action == Action.DELETE.value:
@@ -312,7 +312,6 @@ class ScratchpadEnv(BaseEnv):
                 src = self._s['input']
             else:
                 src = self._s['scratchpad']
-                
             self._s['llm_input'] = np.full(shape=(self.llm_input_token_len), fill_value=END_OF_TEXT, dtype=np.float32)
             self._s['llm_output'] = np.full(shape=(self.llm_output_token_len), fill_value=END_OF_TEXT, dtype=np.float32)
             for i in range(self._s['cursor_highlight'][2] - self._s['cursor_highlight'][1]):
@@ -333,10 +332,13 @@ class ScratchpadEnv(BaseEnv):
             s = np.where(self._s['output'] == END_OF_TEXT)[0][0]
             self._s['output'][s] = self._s['scratchpad'][self._s['cursor_pos'][1]]
             done = (self._s['output'][s] == END_OF_TEXT) or (s == self.output_token_len - 1)
-            reward = self.evaluate_output()
-            self._final_eval_reward = reward
         
         done = done or self.episode_length >= self.max_episode_len
+        
+        prv_state_value = self._state_value
+        self._state_value = self.get_state_value() - 0.005*self.episode_length
+        
+        reward = self._state_value - prv_state_value
         
         action_mask = np.zeros(len(Action), 'int8')
         action_mask[self.legal_actions] = 1
@@ -345,7 +347,7 @@ class ScratchpadEnv(BaseEnv):
         
         info = {}
         if done:
-            info['eval_episode_return'] = self._final_eval_reward
+            info['eval_episode_return'] = self._state_value
         
         return BaseEnvTimestep(obs, reward, done, info)
     
@@ -360,21 +362,108 @@ class ScratchpadEnv(BaseEnv):
     def close(self) -> None:
         pass
         
-    def evaluate_output(self) -> np.float32:
+    def get_state_value(self) -> np.float32:
+        # In MuZero, dynamics function g tries to predict true reward u given 
+        # latent state s and action a. 
+        # We design u to shape the model in giving us best output. The value 
+        # of the world W is actually path agnostic - except for general penalty
+        # for wasting time. 
+        
+        value = 0.0 
         if self.llm_model == "test_01":
-            reward = 0
-            n = int(self._s['input'][0])
-            if not n:
-                return 0
-            answer = [i % 2 for i in range(n)]
+            # Tier 4: Outputting sequence from scratchpad
             
-            for s, a in zip(self._s['output'], answer):
-                if s == a:
-                    reward += 1
+            # Tier 3: Getting 0 and 1 into scratchpad 
+            
+            # Tier 2: Getting llm_generate to be legal
+            
+            # Tier 1: Getting valid highlighted range
+            
+            def evaluate_tier4():
+                n_correct = 0
+                n_incorrect = 0
+                n_total_input = 0
+                
+                n = int(self._s['input'][0]) or 2
+                answer = [i % 2 for i in range(n)] + [END_OF_TEXT for _ in range(self.llm_output_token_len - n)]
+                for s, a in zip(self._s['output'], answer):
+                    n_total_input += 1
+                    if s == a:
+                        n_correct += 1
+                    else:
+                        n_incorrect += 1
+                    if s == END_OF_TEXT:
+                        break
+                        
+                # Component rewards
+                alpha = 0.5
+                beta = 0.1
+                gamma = 2.0
+                delta = 0.5
+                lambda_ = 0.1
+                
+                n_total_correct = n+1
+                
+                r_correct = (n_correct / n_total_correct) ** alpha
+                r_incorrect = beta * ((1 - (n_correct / n_total_correct)) ** gamma) if n_incorrect > 0 else 0
+                r_length = delta * np.exp(-lambda_ * abs(n_total_input - n_total_correct))
+                
+                progress = r_correct + r_incorrect + r_length
+                if n_total_input == 1:
+                    return 0
+                return progress
+            
+            def evaluate_tier3():
+                scratch = [False, False]
+                llm = [False, False]
+                for i in range(self.scratchpad_token_len):
+                    if self._s['scratchpad'][i] == 0:
+                        scratch[0] = True
+                    if self._s['scratchpad'][i] == 1:
+                        scratch[1] = True
+                for i in range(self.llm_output_token_len):
+                    if self._s['llm_output'][i] == 0:
+                        llm[0] = True
+                    if self._s['llm_output'][i] == 1:
+                        llm[1] = True
+                        
+                progress = 0
+                for i in range(2):
+                    if scratch[i]:
+                        progress += 0.5
+                    elif llm[i]:
+                        progress += 0.25
+                return progress
+            
+            def evaluate_tier2():
+                has_legal_generate = Action.LLM_GENERATE.value in self.legal_actions
+                return 1 if has_legal_generate else 0
+        
+            def evaluate_tier1():
+                has_valid_range = False
+            
+                if self._s['cursor_highlight'][0] == 0:
+                    src = self._s['input']
                 else:
+                    src = self._s['scratchpad']
+                src_len = self._s['cursor_highlight'][2] - self._s['cursor_highlight'][1]
+                
+                if src_len <= self.llm_input_token_len:
+                    buffer = [src[self._s['cursor_highlight'][1] + i] for i in range(src_len)]
+                    for c in buffer:
+                        if c != END_OF_TEXT:
+                            has_valid_range = True
+                
+                return 1 if has_valid_range else 0
+            
+            for i, e in enumerate([evaluate_tier4, evaluate_tier3, evaluate_tier2, evaluate_tier1]):
+                progress = e()
+                if progress > 0:
+                    value = (3-i) + progress
                     break
-
-            return np.float32(reward / n)
+                    
+            return value
+            
         if self.llm_model == "qwen":
             return 0
         

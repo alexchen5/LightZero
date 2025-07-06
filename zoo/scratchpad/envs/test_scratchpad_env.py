@@ -9,6 +9,7 @@ scratchpad_token_len=10
 llm_input_token_len=4
 llm_output_token_len=24
 output_token_len=20
+max_episode_len=40
 
 total_text_dim = input_token_len+1+scratchpad_token_len+1+llm_input_token_len+1+llm_output_token_len+1+output_token_len+1
 
@@ -24,6 +25,7 @@ class TestScratchpad:
             'llm_input_token_len': llm_input_token_len,
             'llm_output_token_len': llm_output_token_len,
             'output_token_len': output_token_len,
+            'max_episode_len': max_episode_len,
             'llm_model': "test_01",
             'evaluate_model': "test_01",
         })
@@ -138,14 +140,42 @@ class TestScratchpad:
         
         self.env.set_input([np.int32(v) for v in range(self.env.input_token_len)])
         
-        for i in range(self.env.input_token_len):
+        self.env.step(Action.TO_RIGHT.value)
+        self.env.step(Action.START_HIGHLIGHT.value)
+        for i in range(self.env.input_token_len-1):
             self.env.step(Action.TO_RIGHT.value)
             self.env.step(Action.STOP_HIGHLIGHT.value)
         self.env.step(Action.TO_SCRATCHPAD.value)
         obs1, reward, done, info = self.env.step(Action.CLONE.value)
         
+        for i in range(self.env.input_token_len-1):
+            assert s(obs1['observation'])['scratchpad'][i] == i+1 
+        assert s(obs1['observation'])['scratchpad'][self.env.input_token_len-1] == END_OF_TEXT
+            
+    def test_clone_scratchpad(self):
+        self.env.reset()
+        
+        self.env.set_input([np.int32(v) for v in range(self.env.input_token_len)])
         for i in range(self.env.input_token_len):
-            assert s(obs1['observation'])['scratchpad'][i] == i 
+            self.env.step(Action.TO_RIGHT.value)
+            self.env.step(Action.STOP_HIGHLIGHT.value)
+        self.env.step(Action.TO_SCRATCHPAD.value)
+        self.env.step(Action.CLONE.value)
+        
+        self.env.step(Action.START_HIGHLIGHT.value)
+        for i in range(self.env.input_token_len-1):
+            self.env.step(Action.TO_RIGHT.value)
+            self.env.step(Action.STOP_HIGHLIGHT.value)
+        
+        self.env.step(Action.TO_INPUT.value)
+        self.env.step(Action.TO_SCRATCHPAD.value)
+        
+        self.env.step(Action.TO_RIGHT.value)
+        obs1, reward, done, info = self.env.step(Action.CLONE.value)
+        
+        assert s(obs1['observation'])['scratchpad'][0] == 0
+        for i in range(self.env.input_token_len-1):
+            assert s(obs1['observation'])['scratchpad'][i+1] == i 
         
     def test_clone_illegal(self):
         self.env.reset()
