@@ -93,8 +93,13 @@ def eval_muzero(
         # ==============================================================
         returns = []
         for i in range(num_episodes_each_seed):
-            stop_flag, episode_info = evaluator.eval(learner.save_checkpoint, learner.train_iter)
+            stop_flag, episode_info = evaluator.eval(learner.save_checkpoint, learner.train_iter, return_trajectory=True)
             returns.append(episode_info['eval_episode_return'])
+            print(episode_info['trajectory'][0].obs_segment[-1])
+            print(episode_info['trajectory'][0].action_segment)
+            for r in episode_info['trajectory'][0].reward_segment:
+                print(r)
+            print()
 
         returns = np.array(returns)
 

@@ -11,13 +11,16 @@ output_token_len=20
 max_episode_len=40
 
 collector_env_num = 8
-n_episode = 80
+n_episode = 8
 evaluator_env_num = 3
 num_simulations = 50
 update_per_collect = 200
-batch_size = 64
+batch_size = 256
 max_env_step = int(1e6)
 reanalyze_ratio = 0.
+
+model_path = None
+model_path = "/scratch/pawsey1151/alexchen5/LightZero/data_muzero/scratchpad_muzero_250704_204611/ckpt/iteration_100000.pth.tar"
 
 # =========== for debug ===========
 # collector_env_num = 2
@@ -60,19 +63,19 @@ scratchpad_muzero_config = dict(
             observation_shape=(1, 9, total_text_dim),
             action_space_size=13,
             image_channel=1,
-            # We use the small size model for tictactoe.
-            num_res_blocks=1,
-            num_channels=1,
-            reward_head_hidden_channels=[8],
-            value_head_hidden_channels=[8],
-            policy_head_hidden_channels=[8],
-            support_scale=10,
-            reward_support_size=21,
-            value_support_size=21,
+            # # We use the small size model for tictactoe.
+            # num_res_blocks=1,
+            # num_channels=1,
+            # reward_head_hidden_channels=[8],
+            # value_head_hidden_channels=[8],
+            # policy_head_hidden_channels=[8],
+            # support_scale=10,
+            # reward_support_size=21,
+            # value_support_size=21,
             self_supervised_learning_loss=True,
         ),
         # (str) The path of the pretrained model. If None, the model will be initialized by the default model.
-        model_path=None,
+        model_path=model_path,
         cuda=True,
         # env_type="not_board_games",
         action_type='varied_action_space',
@@ -99,6 +102,7 @@ scratchpad_muzero_config = dict(
     ),
 )
 scratchpad_muzero_config = EasyDict(scratchpad_muzero_config)
+main_config = scratchpad_muzero_config
 
 scratchpad_muzero_create_config = dict(
     env=dict(
@@ -112,6 +116,7 @@ scratchpad_muzero_create_config = dict(
     ),
 )
 scratchpad_muzero_create_config = EasyDict(scratchpad_muzero_create_config)
+create_config = scratchpad_muzero_create_config
 
 if __name__ == "__main__":
     from lzero.entry import train_muzero
